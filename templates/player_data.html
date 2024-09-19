@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data for {player_name}</title>
     <link rel="stylesheet" href="/static/style.css">
+
+    
 </head>
 <body>
     <div class="container">
@@ -16,7 +18,7 @@
             <a href="/player/{player_name}?data_type=chat" class="{ 'active' if data_type == 'chat' else 'inactive' }">Chat</a>
             <a href="/player/{player_name}?data_type=command" class="{ 'active' if data_type == 'command' else 'inactive' }">Command</a>
         </nav>
-        <table>
+        <table class="data-table">
             <tr>
                 <th>Player Name</th>
                 <th>Dialog Text</th>
