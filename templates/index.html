@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Data</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+
+<body>
+    <header>
+        <h1>Game Data</h1>
+    </header>
+    <main>
+        <ul class="player-list">
+        {% for player in players %}
+            <li><a href="/player/{{ player }}">{{ player }}</a></li>
+        {% endfor %}
+        </ul>
+    </main>
+    <footer>
+        <p>Made with ❤️ by Your Name</p>
+    </footer>
+</body>
+</html>
