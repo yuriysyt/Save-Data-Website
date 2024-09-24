@@ -8,6 +8,7 @@ from datetime import datetime
 import json
 from typing import List
 from contextlib import contextmanager
+import pytz  # Импортируйте pytz для работы с часовыми поясами
 
 app = FastAPI()
 from fastapi.staticfiles import StaticFiles
@@ -75,6 +76,7 @@ async def index():
         <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
         <script>
             let socket = new WebSocket("ws://localhost:8000/ws");
+
             
             socket.onmessage = function(event) {{
                 const data = JSON.parse(event.data);
@@ -101,6 +103,7 @@ async def index():
     </body>
     </html>
     """
+
 @app.get("/player/{player_name}", response_class=HTMLResponse)
 async def player_data(player_name: str, data_type: str = 'all'):
     with get_db() as session:
@@ -118,12 +121,15 @@ async def player_data(player_name: str, data_type: str = 'all'):
         last_date = None
         current_table_html = ""
 
+        moscow_tz = pytz.timezone('Europe/Moscow')  # Задайте московский часовой пояс
+
         for data in player_data:
-            date_str = data.timestamp.strftime('%d %m %Y')
+            moscow_time = data.timestamp.astimezone(moscow_tz)  # Преобразуйте время в московское
+            date_str = moscow_time.strftime('%d %m %Y')
             day, month, year = date_str.split()
             month_russian = month_names[int(month)]
             formatted_date = f"{day} {month_russian} {year} года"
-            time_str = data.timestamp.strftime('%H:%M:%S')
+            time_str = moscow_time.strftime('%H:%M:%S')  # Используйте московское время
 
             if last_date != formatted_date:
                 if current_table_html:
@@ -172,9 +178,31 @@ async def player_data(player_name: str, data_type: str = 'all'):
     return f"""
 <html lang="ru">
 <head>
-    <title>Данные для {player_name}</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
+        <title>Данные для {player_name}</title>
+        <link rel="stylesheet" href="/static/style.css">
+        <script>
+            let socket = new WebSocket("ws://localhost:8000/ws");
+            
+            socket.onmessage = function(event) {{
+                const data = JSON.parse(event.data);
+                if (data.new_data && data.new_data.player_name === '{player_name}') {{
+                    addNewData(data.new_data);
+                }}
+            }};
+            
+            function addNewData(newData) {{
+                const dataTable = document.querySelector(".data-table tbody");
+                if (dataTable) {{
+                    const newRow = document.createElement('tr');
+                    newRow.innerHTML = `
+                        <td class="dialog-text">${{newData.dialog_text}}</td>
+                        <td>${{newData.timestamp}}</td>
+                    `;
+                    dataTable.insertBefore(newRow, dataTable.firstChild);
+                }}
+            }}
+        </script>
+    </head>
 <body>
     <div class="container">
         <a href="/" class="back-button">Назад к игрокам</a>
@@ -192,16 +220,12 @@ async def player_data(player_name: str, data_type: str = 'all'):
 </html>
 """
 
-
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            # Здесь можно обрабатывать входящие сообщения от клиента, если нужно
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
@@ -226,7 +250,7 @@ async def submit_data(data: PlayerDataIn):
             "player_name": new_data.player_name,
             "dialog_text": new_data.dialog_text,
             "data_type": new_data.data_type,
-            "timestamp": new_data.timestamp.strftime('%H:%M:%S %Y-%m-%d ')
+            "timestamp": new_data.timestamp.strftime('%H:%M:%S %Y-%m-%d ')  # Временная метка по UTC
         }
 
     # Отправляем обновление всем подключенным клиентам
@@ -234,9 +258,9 @@ async def submit_data(data: PlayerDataIn):
         "players": players,
         "new_data": new_data_dict
     }))
-    
-    return {"message": "Данные успешно сохранены"}
+
+    return {"status": "success"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="localhost", port=8000)
