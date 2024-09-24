@@ -6,17 +6,15 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session
 from datetime import datetime
 import json
-from typing import List
+from typing import List, Dict
 from contextlib import contextmanager
-import pytz  # Импортируйте pytz для работы с часовыми поясами
+import pytz
 
 app = FastAPI()
 from fastapi.staticfiles import StaticFiles
 
-# Serve static files from the 'static' directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Database setup
 DATABASE_URL = "sqlite:///./game_data.db"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -48,18 +46,20 @@ def get_db():
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: Dict[WebSocket, str] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, data_type: str):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections[websocket] = data_type
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            del self.active_connections[websocket]
 
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+    async def broadcast(self, message: str, data_type: str):
+        for connection, conn_data_type in self.active_connections.items():
+            if conn_data_type == 'all' or conn_data_type == data_type:
+                await connection.send_text(message)
 
 manager = ConnectionManager()
 
@@ -75,9 +75,8 @@ async def index():
         <link rel="stylesheet" href="/static/style.css">
         <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
         <script>
-            let socket = new WebSocket("ws://localhost:8000/ws");
+            let socket = new WebSocket("ws://localhost:8000/ws?data_type=all");
 
-            
             socket.onmessage = function(event) {{
                 const data = JSON.parse(event.data);
                 if (data.players) {{
@@ -121,15 +120,15 @@ async def player_data(player_name: str, data_type: str = 'all'):
         last_date = None
         current_table_html = ""
 
-        moscow_tz = pytz.timezone('Europe/Moscow')  # Задайте московский часовой пояс
+        moscow_tz = pytz.timezone('Europe/Moscow')
 
         for data in player_data:
-            moscow_time = data.timestamp.astimezone(moscow_tz)  # Преобразуйте время в московское
+            moscow_time = data.timestamp.astimezone(moscow_tz)
             date_str = moscow_time.strftime('%d %m %Y')
             day, month, year = date_str.split()
             month_russian = month_names[int(month)]
             formatted_date = f"{day} {month_russian} {year} года"
-            time_str = moscow_time.strftime('%H:%M:%S')  # Используйте московское время
+            time_str = moscow_time.strftime('%H:%M:%S')
 
             if last_date != formatted_date:
                 if current_table_html:
@@ -181,7 +180,7 @@ async def player_data(player_name: str, data_type: str = 'all'):
         <title>Данные для {player_name}</title>
         <link rel="stylesheet" href="/static/style.css">
         <script>
-            let socket = new WebSocket("ws://localhost:8000/ws");
+            let socket = new WebSocket("ws://localhost:8000/ws?data_type={data_type}");
             
             socket.onmessage = function(event) {{
                 const data = JSON.parse(event.data);
@@ -195,14 +194,12 @@ async def player_data(player_name: str, data_type: str = 'all'):
                 if (dataTable) {{
                     const newRow = document.createElement('tr');
                     newRow.innerHTML = `
-                        <td class="time">${{newData.timestamp}}</td>  <!-- Только время -->
+                        <td class="time">${{newData.timestamp}}</td>
                         <td class="dialog-text">${{newData.dialog_text}}</td>
                     `;
                     dataTable.insertBefore(newRow, dataTable.firstChild);
                 }}
             }}
-
-
         </script>
     </head>
 <body>
@@ -224,7 +221,8 @@ async def player_data(player_name: str, data_type: str = 'all'):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    data_type = websocket.query_params.get("data_type", "all")
+    await manager.connect(websocket, data_type)
     try:
         while True:
             data = await websocket.receive_text()
@@ -243,34 +241,24 @@ async def submit_data(data: PlayerDataIn):
         session.add(new_data)
         session.commit()
         
-        # Получаем обновленный список игроков
         players = session.query(PlayerData.player_name).distinct().all()
         players = [player[0] for player in players]
-
-        # Создаем словарь с данными нового объекта
-        # Измените порядок добавления в словарь new_data_dict
-                # Получаем московский часовой пояс
+        
         moscow_tz = pytz.timezone('Europe/Moscow')
-        moscow_time = datetime.utcnow().astimezone(moscow_tz)  # Преобразуем UTC в московское время
+        moscow_time = new_data.timestamp.astimezone(moscow_tz)
+        
+        await manager.broadcast(json.dumps({
+            "players": players,
+            "new_data": {
+                "player_name": data.player_name,
+                "dialog_text": data.dialog_text,
+                "timestamp": moscow_time.strftime('%H:%M:%S'),
+                "data_type": data.data_type
+            }
+        }), data.data_type)
 
-        # Измените на:
-        new_data_dict = {
-            "player_name": new_data.player_name,
-            "timestamp": moscow_time.strftime('%H:%M:%S'),  # Только время
-            "dialog_text": new_data.dialog_text,
-            "data_type": new_data.data_type,
-        }
-
-
-
-    # Отправляем обновление всем подключенным клиентам
-    await manager.broadcast(json.dumps({
-        "players": players,
-        "new_data": new_data_dict
-    }))
-
-    return {"status": "success"}
+    return {"status": "success", "data": data}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="localhost", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
