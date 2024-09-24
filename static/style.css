@@ -99,15 +99,16 @@ h1 {
 .back-button {
     display: block;
     text-align: center;
-    margin-top: 20px;
+    margin-top: 40px; /* Increased margin for lower positioning */
     padding: 10px;
-    background-color: #ff8c00; /* Оранжевый фон для кнопки "Назад" */
-    color: #fff; /* Белый текст */
+    background-color: #ff8c00;
+    color: #fff;
     text-decoration: none;
     border-radius: 5px;
-    transition: background-color 0.3s ease; /* Плавный переход при наведении */
+    transition: background-color 0.3s ease;
 }
 
 .back-button:hover {
-    background-color: #e07b00; /* Более темный оранжевый при наведении */
+    background-color: #e07b00;
 }
+
