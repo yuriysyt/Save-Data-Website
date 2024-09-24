@@ -195,12 +195,14 @@ async def player_data(player_name: str, data_type: str = 'all'):
                 if (dataTable) {{
                     const newRow = document.createElement('tr');
                     newRow.innerHTML = `
+                        <td class="time">${{newData.timestamp}}</td>  <!-- Только время -->
                         <td class="dialog-text">${{newData.dialog_text}}</td>
-                        <td>${{newData.timestamp}}</td>
                     `;
                     dataTable.insertBefore(newRow, dataTable.firstChild);
                 }}
             }}
+
+
         </script>
     </head>
 <body>
@@ -246,12 +248,20 @@ async def submit_data(data: PlayerDataIn):
         players = [player[0] for player in players]
 
         # Создаем словарь с данными нового объекта
+        # Измените порядок добавления в словарь new_data_dict
+                # Получаем московский часовой пояс
+        moscow_tz = pytz.timezone('Europe/Moscow')
+        moscow_time = datetime.utcnow().astimezone(moscow_tz)  # Преобразуем UTC в московское время
+
+        # Измените на:
         new_data_dict = {
             "player_name": new_data.player_name,
+            "timestamp": moscow_time.strftime('%H:%M:%S'),  # Только время
             "dialog_text": new_data.dialog_text,
             "data_type": new_data.data_type,
-            "timestamp": new_data.timestamp.strftime('%H:%M:%S %Y-%m-%d ')  # Временная метка по UTC
         }
+
+
 
     # Отправляем обновление всем подключенным клиентам
     await manager.broadcast(json.dumps({
