@@ -10,10 +10,7 @@ from typing import List
 from contextlib import contextmanager
 
 app = FastAPI()
-from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-
-app = FastAPI()
 
 # Serve static files from the 'static' directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -75,6 +72,7 @@ async def index():
     <head>
         <title>Игровые данные</title>
         <link rel="stylesheet" href="/static/style.css">
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
         <script>
             let socket = new WebSocket("ws://localhost:8000/ws");
             
@@ -103,8 +101,6 @@ async def index():
     </body>
     </html>
     """
-
-# Удаление миллисекунд из временной метки
 @app.get("/player/{player_name}", response_class=HTMLResponse)
 async def player_data(player_name: str, data_type: str = 'all'):
     with get_db() as session:
@@ -113,44 +109,90 @@ async def player_data(player_name: str, data_type: str = 'all'):
         else:
             player_data = session.query(PlayerData).filter_by(player_name=player_name, data_type=data_type).order_by(PlayerData.timestamp.desc()).all()
     
-        player_data_html = "".join(f"""
-        <tr>
-            <td class="dialog-text">{data.dialog_text}</td>
-            <td>{data.timestamp.strftime('%H:%M:%S %Y-%m-%d')}</td>  <!-- Форматирование без миллисекунд -->
-        </tr>""" for data in player_data)
-    
-    return f"""
-    <html lang="ru">
-    <head>
-        <title>Данные для {player_name}</title>
-        <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <div class="container">
-            <h1>Данные для {player_name}</h1>
-            <div class="filters">
-                <a href="/player/{player_name}?data_type=all" class="filter-button {'active' if data_type == 'all' else 'inactive'}">Все</a>
-                <a href="/player/{player_name}?data_type=dialog" class="filter-button {'active' if data_type == 'dialog' else 'inactive'}">Диалоги</a>
-                <a href="/player/{player_name}?data_type=input" class="filter-button {'active' if data_type == 'input' else 'inactive'}">Ввод</a>
-                <a href="/player/{player_name}?data_type=chat" class="filter-button {'active' if data_type == 'chat' else 'inactive'}">Чат</a>
-                <a href="/player/{player_name}?data_type=command" class="filter-button {'active' if data_type == 'command' else 'inactive'}">Команды</a>
-            </div>
+        month_names = {
+            1: "января", 2: "февраля", 3: "марта", 4: "апреля", 5: "мая", 6: "июня",
+            7: "июля", 8: "августа", 9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
+        }
+
+        player_data_html = ""
+        last_date = None
+        current_table_html = ""
+
+        for data in player_data:
+            date_str = data.timestamp.strftime('%d %m %Y')
+            day, month, year = date_str.split()
+            month_russian = month_names[int(month)]
+            formatted_date = f"{day} {month_russian} {year} года"
+            time_str = data.timestamp.strftime('%H:%M:%S')
+
+            if last_date != formatted_date:
+                if current_table_html:
+                    player_data_html += f"""
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Время</th>
+                                <th>Текст</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {current_table_html}
+                        </tbody>
+                    </table>
+                    </div>"""
+
+                player_data_html += f"""
+                <div class="date-section">
+                    <h2 class="date-header">{formatted_date}</h2>
+                """
+                current_table_html = ""
+                last_date = formatted_date
+
+            current_table_html += f"""
+            <tr>
+                <td class="time">{time_str}</td>
+                <td class="dialog-text">{data.dialog_text}</td>
+            </tr>"""
+
+        if current_table_html:
+            player_data_html += f"""
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Текст</th>
                         <th>Время</th>
+                        <th>Текст</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {player_data_html}
+                    {current_table_html}
                 </tbody>
             </table>
-            <a href="/" class="back-button">Назад к игрокам</a> <!-- Перевод на русский -->
+            </div>"""
+
+    return f"""
+<html lang="ru">
+<head>
+    <title>Данные для {player_name}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-button">Назад к игрокам</a>
+        <h1>Данные для {player_name}</h1>
+        <div class="filters">
+            <a href="/player/{player_name}?data_type=all" class="filter-button {'active' if data_type == 'all' else 'inactive'}">Все</a>
+            <a href="/player/{player_name}?data_type=dialog" class="filter-button {'active' if data_type == 'dialog' else 'inactive'}">Диалоги</a>
+            <a href="/player/{player_name}?data_type=input" class="filter-button {'active' if data_type == 'input' else 'inactive'}">Ввод</a>
+            <a href="/player/{player_name}?data_type=chat" class="filter-button {'active' if data_type == 'chat' else 'inactive'}">Чат</a>
+            <a href="/player/{player_name}?data_type=command" class="filter-button {'active' if data_type == 'command' else 'inactive'}">Команды</a>
         </div>
-    </body>
-    </html>
-    """
+        {player_data_html}
+    </div>
+</body>
+</html>
+"""
+
+
 
 
 @app.websocket("/ws")
